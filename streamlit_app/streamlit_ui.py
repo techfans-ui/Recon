@@ -1,135 +1,16 @@
 import time
-import random
 import asyncio
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 import streamlit as st
 
-# ==========================================
-# 1. OSINT CORE ENGINE (shared by API + UI)
-# ==========================================
-
-class ReconRequest(BaseModel):
-    target: str
-    lang: str = "en"
-
-
-def create_api() -> FastAPI:
-    """Factory: create and return a FastAPI app instance with routes bound.
-
-    Use `uvicorn osint_app:create_api --factory` to run the HTTP API standalone.
-    """
-    api = FastAPI(title="OpenData OSINT Core", version="1.0")
-
-    @api.get("/health")
-    async def health():
-        return {"status": "online"}
-
-    @api.post("/api/v1/recon")
-    async def start_recon(request: ReconRequest):
-        try:
-            return await perform_recon(request.target, request.lang)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-
-    return api
-
-
-# Context-aware mock threat intelligence database, per language.
-SOURCE_INTELLIGENCE = {
-    "en": {
-        "github": {"status": "public repository matches found", "entities": 2, "flag": "INFO"},
-        "linkedin": {"status": "professional profile indexed", "entities": 1, "flag": "OK"},
-        "twitter": {"status": "3 correlated handles identified", "entities": 3, "flag": "OK"},
-        "haveibeenpwned": {"status": "2 data breaches detected!", "entities": 2, "flag": "ALERT"},
-        "shodan": {"status": "1 vulnerable host port exposed", "entities": 1, "flag": "ALERT"},
-        "crt_sh": {"status": "8 active SSL certificates mapped", "entities": 0, "flag": "OK"},
-        "whois": {"status": "registrant record matched", "entities": 1, "flag": "OK"},
-        "_default": {"status": "no data trail found", "entities": 0, "flag": "CLEARED"},
-    },
-    "fr": {
-        "github": {"status": "correspondances de dépôts publics trouvées", "entities": 2, "flag": "INFO"},
-        "linkedin": {"status": "profil professionnel indexé", "entities": 1, "flag": "OK"},
-        "twitter": {"status": "3 identifiants corrélés détectés", "entities": 3, "flag": "OK"},
-        "haveibeenpwned": {"status": "2 fuites de données détectées !", "entities": 2, "flag": "ALERT"},
-        "shodan": {"status": "1 port hôte vulnérable exposé", "entities": 1, "flag": "ALERT"},
-        "crt_sh": {"status": "8 certificats SSL actifs cartographiés", "entities": 0, "flag": "OK"},
-        "whois": {"status": "enregistrement du titulaire trouvé", "entities": 1, "flag": "OK"},
-        "_default": {"status": "aucune trace de données trouvée", "entities": 0, "flag": "CLEARED"},
-    },
-}
-
-
-async def check_source_worker(source_name: str, target: str, delay: float, lang: str = "en"):
-    """Simulates highly concurrent, non-blocking asynchronous I/O calls to OSINT endpoints."""
-    await asyncio.sleep(delay)
-
-    catalog = SOURCE_INTELLIGENCE.get(lang, SOURCE_INTELLIGENCE["en"])
-    result_payload = catalog.get(source_name, catalog["_default"])
-    return {"source": source_name, **result_payload}
-
-
-def build_synthesis(target: str, total_entities: int, lang: str) -> str:
-    if lang == "fr":
-        return (
-            f"RAPPORT DE SYNTHÈSE IA CLAUDE // CIBLE : {target}\n"
-            f"L'analyse confirme des nœuds d'identité numérique distribués sur {total_entities} plateformes publiques. "
-            f"Exposition critique identifiée dans les indices de la matrice opérationnelle de menaces. "
-            f"Action recommandée : isoler les enregistrements compromis et régénérer les jetons d'authentification."
-        )
-    return (
-        f"CLAUDE AI SYNTHESIS REPORT // TARGET: {target}\n"
-        f"Analysis confirms distributed digital identity nodes across {total_entities} public platforms. "
-        f"Critical exposure identified within operational threat matrix indices. "
-        f"Action Recommended: Isolate compromised records and regenerate authentication tokens."
-    )
-
-
-async def perform_recon(target: str, lang: str = "en") -> dict:
-    """Core recon engine. Runs all source workers concurrently and builds the report.
-
-    Shared by both the FastAPI route and the Streamlit UI so the app works with or
-    without a running HTTP server.
-    """
-    if not target:
-        raise ValueError("Target tracking signature required.")
-
-    lang = lang if lang in SOURCE_INTELLIGENCE else "en"
-
-    # List of open-source intelligence matrices to scan in parallel
-    sources = ["github", "linkedin", "twitter", "haveibeenpwned", "shodan", "crt_sh", "whois"]
-
-    # Launch concurrent worker tasks via asyncio gathering engine
-    tasks = [
-        check_source_worker(src, target, random.uniform(0.3, 1.4), lang)
-        for src in sources
-    ]
-    results = await asyncio.gather(*tasks)
-
-    total_entities = sum(item["entities"] for item in results)
-    confidence = "HIGH" if total_entities >= 4 else "MEDIUM"
-
-    return {
-        "target": target,
-        "scan_results": results,
-        "metrics": {
-            "entities_found": total_entities,
-            "correlations_detected": random.randint(2, 5) if total_entities > 0 else 0,
-            "confidence_score": confidence,
-        },
-        "ai_synthesis": build_synthesis(target, total_entities, lang),
-    }
-
-
-# The FastAPI application is created by `create_api()` when running the HTTP API
-# standalone. Streamlit imports this module but does not create an ASGI app by
-# default, avoiding accidental exposure of the ASGI routes on the Streamlit
-# server.
+# The recon engine lives in a separate, framework-free module. The Streamlit UI
+# deliberately does NOT import FastAPI — Streamlit's uvicorn-based server would
+# otherwise try to auto-mount the ASGI app and crash on startup.
+from recon_engine import perform_recon
 
 
 # ==========================================
-# 2. STREAMLIT GHOST TERMINAL FRONTEND UI
+# STREAMLIT GHOST TERMINAL FRONTEND UI
 # ==========================================
 
 GHOST_CSS = """
@@ -379,10 +260,11 @@ def run_frontend():
     st.markdown(f"<div class='ghost-terminal'>{synthesis}</div>", unsafe_allow_html=True)
 
 
-# Under `streamlit run app.py`, Streamlit executes this file as the main module,
-# so render the UI. The recon engine runs fully in-process (no HTTP server).
+# Under `streamlit run streamlit_ui.py`, Streamlit executes this file as the main
+# module, so render the UI. The recon engine runs fully in-process (no HTTP server).
 #
 # To serve the FastAPI HTTP API standalone instead, run:
-#     uvicorn app:app --host 127.0.0.1 --port 8000
+#     python osint_app.py
+#     # or: python -m uvicorn osint_app:create_api --factory --host 127.0.0.1 --port 8000
 if __name__ == "__main__":
     run_frontend()
