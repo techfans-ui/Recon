@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 import json
 from meilisearch import Client
+from . import sql_index
 from typing import List
 
 app = FastAPI(title="OpenData Ghost FR - Backend")
@@ -36,7 +37,18 @@ def get_meili_client():
         return None
 
 client = get_meili_client()
-index = client.index("opendata") if client else None
+index = None
+use_sqlite = False
+if client:
+    try:
+        index = client.index("opendata")
+    except Exception:
+        index = None
+if not index:
+    # initialize local sqlite index as fallback
+    use_sqlite = True
+    sql_index.init_db(SAMPLE)
+
 
 
 @app.get("/health")
@@ -47,12 +59,17 @@ def health():
 @app.post("/index-sample")
 def index_sample():
     """Index the bundled sample data into Meilisearch. Returns number of documents indexed."""
-    if not client or not index:
-        raise HTTPException(status_code=503, detail="Meilisearch client not available")
     docs = SAMPLE
+    if index:
+        try:
+            res = index.add_documents(docs)
+            return {"updateId": res.get("updateId"), "count": len(docs)}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    # fallback to sqlite
     try:
-        res = index.add_documents(docs)
-        return {"updateId": res.get("updateId"), "count": len(docs)}
+        sql_index.index_docs(docs)
+        return {"count": len(docs), "indexed": "sqlite"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -66,6 +83,12 @@ def search(q: str = Query(..., description="query string"), limit: int = 10):
             return res
         except Exception as e:
             return {"error": str(e)}
-    # fallback simple search
+    if use_sqlite:
+        try:
+            hits = sql_index.search(q, limit=limit)
+            return {"hits": hits, "nbHits": len(hits)}
+        except Exception as e:
+            return {"error": str(e)}
+    # final fallback simple search
     hits = [item for item in SAMPLE if q.lower() in (item.get("title", "") + item.get("content", "")).lower()]
     return {"hits": hits[:limit], "nbHits": len(hits)}

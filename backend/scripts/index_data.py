@@ -5,6 +5,7 @@ import os
 import json
 import time
 from meilisearch import Client
+from app import sql_index
 
 MEILI_URL = os.getenv("MEILI_URL", "http://meilisearch:7700")
 MEILI_KEY = os.getenv("MEILI_KEY", "masterKey")
@@ -29,16 +30,16 @@ def wait_for_meili(url, timeout=30):
         time.sleep(1)
     return False
 
-if not wait_for_meili(MEILI_URL, timeout=60):
-    print("Meilisearch not available at", MEILI_URL)
-    exit(1)
-
-client = Client(MEILI_URL, MEILI_KEY)
-try:
-    client.get_index("opendata")
-except Exception:
-    client.create_index("opendata", {"primaryKey": "id"})
-
-index = client.index("opendata")
-res = index.add_documents(docs)
-print("Indexed", len(docs), "documents. Update ID:", res.get("updateId"))
+if wait_for_meili(MEILI_URL, timeout=10):
+    client = Client(MEILI_URL, MEILI_KEY)
+    try:
+        client.get_index("opendata")
+    except Exception:
+        client.create_index("opendata", {"primaryKey": "id"})
+    index = client.index("opendata")
+    res = index.add_documents(docs)
+    print("Indexed", len(docs), "documents to Meilisearch. Update ID:", res.get("updateId"))
+else:
+    print("Meilisearch not available, indexing to local SQLite fallback.")
+    sql_index.index_docs(docs)
+    print("Indexed", len(docs), "documents to SQLite.")
