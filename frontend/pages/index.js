@@ -231,6 +231,11 @@ export default function Home() {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
+      {/* TOP BANNER */}
+      <div className="app-banner">
+        <h1 className="app-banner-title">Romaric Application</h1>
+      </div>
+
       {/* NAV */}
       <nav className="nav">
         <div className="container nav-inner">

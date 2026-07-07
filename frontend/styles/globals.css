@@ -55,6 +55,27 @@ mark { background: #14324a; color: #ffe600; }
   padding: 0 24px;
 }
 
+/* ---------- top app banner ---------- */
+.app-banner {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  padding: 34px 24px 26px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(0, 255, 204, 0.06), transparent);
+}
+.app-banner-title {
+  margin: 0;
+  font-family: var(--font);
+  font-weight: 700;
+  font-size: clamp(2.6rem, 7vw, 5.5rem);
+  line-height: 1.05;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--accent);
+  text-shadow: 0 0 18px rgba(0, 255, 204, 0.55), 0 0 46px rgba(0, 255, 204, 0.25);
+}
+
 /* ---------- shared UI atoms ---------- */
 .accent { color: var(--accent); text-shadow: 0 0 8px rgba(0, 255, 204, 0.5); }
 .alert { color: var(--alert); text-shadow: 0 0 8px rgba(255, 51, 102, 0.5); }
