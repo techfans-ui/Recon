@@ -1,23 +1,16 @@
 import time
 import random
 import asyncio
-import threading
 
-import httpx
-import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import streamlit as st
 
 # ==========================================
-# 1. FASTAPI BACKEND CONFIGURATION & ENGINE
+# 1. OSINT CORE ENGINE (shared by API + UI)
 # ==========================================
 
-BACKEND_HOST = "127.0.0.1"
-BACKEND_PORT = 8000
-BACKEND_URL = f"http://{BACKEND_HOST}:{BACKEND_PORT}"
-
-app = FastAPI(title="OpenData OSINT Core", version="1.0")
+api = FastAPI(title="OpenData OSINT Core", version="1.0")
 
 
 class ReconRequest(BaseModel):
@@ -25,7 +18,7 @@ class ReconRequest(BaseModel):
     lang: str = "en"
 
 
-@app.get("/health")
+@api.get("/health")
 async def health():
     return {"status": "online"}
 
@@ -80,19 +73,23 @@ def build_synthesis(target: str, total_entities: int, lang: str) -> str:
     )
 
 
-@app.post("/api/v1/recon")
-async def start_recon(request: ReconRequest):
-    if not request.target:
-        raise HTTPException(status_code=400, detail="Target tracking signature required.")
+async def perform_recon(target: str, lang: str = "en") -> dict:
+    """Core recon engine. Runs all source workers concurrently and builds the report.
 
-    lang = request.lang if request.lang in SOURCE_INTELLIGENCE else "en"
+    Shared by both the FastAPI route and the Streamlit UI so the app works with or
+    without a running HTTP server.
+    """
+    if not target:
+        raise ValueError("Target tracking signature required.")
+
+    lang = lang if lang in SOURCE_INTELLIGENCE else "en"
 
     # List of open-source intelligence matrices to scan in parallel
     sources = ["github", "linkedin", "twitter", "haveibeenpwned", "shodan", "crt_sh", "whois"]
 
     # Launch concurrent worker tasks via asyncio gathering engine
     tasks = [
-        check_source_worker(src, request.target, random.uniform(0.3, 1.4), lang)
+        check_source_worker(src, target, random.uniform(0.3, 1.4), lang)
         for src in sources
     ]
     results = await asyncio.gather(*tasks)
@@ -101,36 +98,23 @@ async def start_recon(request: ReconRequest):
     confidence = "HIGH" if total_entities >= 4 else "MEDIUM"
 
     return {
-        "target": request.target,
+        "target": target,
         "scan_results": results,
         "metrics": {
             "entities_found": total_entities,
             "correlations_detected": random.randint(2, 5) if total_entities > 0 else 0,
             "confidence_score": confidence,
         },
-        "ai_synthesis": build_synthesis(request.target, total_entities, lang),
+        "ai_synthesis": build_synthesis(target, total_entities, lang),
     }
 
 
-def run_backend():
-    """Host the FastAPI web server loop inside a distinct daemon execution thread."""
-    uvicorn.run(app, host=BACKEND_HOST, port=BACKEND_PORT, log_level="warning")
-
-
-@st.cache_resource
-def ensure_backend_running():
-    """Start the FastAPI backend once per Streamlit process and wait until it is reachable."""
-    thread = threading.Thread(target=run_backend, daemon=True)
-    thread.start()
-
-    # Wait for the backend to become reachable before returning control to the UI.
-    for _ in range(50):
-        try:
-            httpx.get(f"{BACKEND_URL}/health", timeout=0.5)
-            return True
-        except httpx.HTTPError:
-            time.sleep(0.2)
-    return False
+@api.post("/api/v1/recon")
+async def start_recon(request: ReconRequest):
+    try:
+        return await perform_recon(request.target, request.lang)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 # ==========================================
@@ -274,12 +258,6 @@ def run_frontend():
     )
     t = I18N[lang_choice]
 
-    # Boot the embedded FastAPI backend (runs once, cached across reruns).
-    backend_ready = ensure_backend_running()
-    if not backend_ready:
-        st.error(t["err_backend"])
-        return
-
     # Application Layout Header Structure
     st.markdown(
         "<h1><span class='terminal-accent'>OPENDATA</span> — OSINT v1.0</h1>",
@@ -334,23 +312,13 @@ def run_frontend():
             unsafe_allow_html=True,
         )
 
-    # Perform Live Internal Interprocess Network API Call
+    # Run the recon engine directly in-process (no separate HTTP server needed).
     try:
         with st.spinner(t["spinner"]):
-            response = httpx.post(
-                f"{BACKEND_URL}/api/v1/recon",
-                json={"target": target_input, "lang": lang_choice},
-                timeout=15.0,
-            )
-    except httpx.HTTPError as exc:
-        st.error(t["err_network"].format(exc=exc))
+            payload = asyncio.run(perform_recon(target_input, lang_choice))
+    except Exception as exc:  # noqa: BLE001 - surface any engine fault to the UI
+        st.error(t["err_engine"].format(code="ENGINE", text=str(exc)))
         return
-
-    if response.status_code != 200:
-        st.error(t["err_engine"].format(code=response.status_code, text=response.text))
-        return
-
-    payload = response.json()
 
     # Stream raw data items to look like a running engine logs terminal
     for check in payload["scan_results"]:
@@ -400,5 +368,10 @@ def run_frontend():
     st.markdown(f"<div class='ghost-terminal'>{synthesis}</div>", unsafe_allow_html=True)
 
 
+# Under `streamlit run app.py`, Streamlit executes this file as the main module,
+# so render the UI. The recon engine runs fully in-process (no HTTP server).
+#
+# To serve the FastAPI HTTP API standalone instead, run:
+#     uvicorn app:app --host 127.0.0.1 --port 8000
 if __name__ == "__main__":
     run_frontend()
