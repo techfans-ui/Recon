@@ -1,0 +1,23 @@
+html,body,#__next{height:100%;}
+body{margin:0;font-family:monospace;background:#000;color:#0f0}
+input,button{font-family:monospace}
+button{margin-left:8px}
+
+.terminal {
+	background: #000;
+	color: #0f0;
+	border: 1px solid #0f0;
+	padding: 16px;
+	max-width: 900px;
+}
+.cursor {
+	display:inline-block;
+	width:10px;
+	background:#0f0;
+	margin-left:6px;
+	animation: blink 1s steps(2) infinite;
+}
+@keyframes blink { from {opacity:1} to {opacity:0} }
+.hit-title{color:#aff}
+.hit-source{color:#aaf}
+.hit-content mark{background:#222;color:#ff0}

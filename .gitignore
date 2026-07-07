@@ -1,0 +1,28 @@
+# Node
+node_modules/
+/.next/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+ENV/
+*.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+
+# Logs
+npm-debug.log*
+pip-log.txt
+
+# Meilisearch data
+meili_data/

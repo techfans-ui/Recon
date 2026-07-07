@@ -1,0 +1,16 @@
+[
+  {
+    "id": "1",
+    "title": "Exemple: fuite de données publiques",
+    "content": "Dataset d'exemple pour démontrer la recherche OSINT. Contient métadonnées et résumé.",
+    "source": "opendata.example",
+    "date": "2026-07-01"
+  },
+  {
+    "id": "2",
+    "title": "Rapport de sécurité publique",
+    "content": "Analyse des incidents locaux et visualisation temporelle.",
+    "source": "ministry.example",
+    "date": "2026-06-15"
+  }
+]
