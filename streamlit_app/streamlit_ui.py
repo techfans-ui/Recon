@@ -10,17 +10,30 @@ import streamlit as st
 # 1. OSINT CORE ENGINE (shared by API + UI)
 # ==========================================
 
-api = FastAPI(title="OpenData OSINT Core", version="1.0")
-
-
 class ReconRequest(BaseModel):
     target: str
     lang: str = "en"
 
 
-@api.get("/health")
-async def health():
-    return {"status": "online"}
+def create_api() -> FastAPI:
+    """Factory: create and return a FastAPI app instance with routes bound.
+
+    Use `uvicorn osint_app:create_api --factory` to run the HTTP API standalone.
+    """
+    api = FastAPI(title="OpenData OSINT Core", version="1.0")
+
+    @api.get("/health")
+    async def health():
+        return {"status": "online"}
+
+    @api.post("/api/v1/recon")
+    async def start_recon(request: ReconRequest):
+        try:
+            return await perform_recon(request.target, request.lang)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    return api
 
 
 # Context-aware mock threat intelligence database, per language.
@@ -109,12 +122,10 @@ async def perform_recon(target: str, lang: str = "en") -> dict:
     }
 
 
-@api.post("/api/v1/recon")
-async def start_recon(request: ReconRequest):
-    try:
-        return await perform_recon(request.target, request.lang)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+# The FastAPI application is created by `create_api()` when running the HTTP API
+# standalone. Streamlit imports this module but does not create an ASGI app by
+# default, avoiding accidental exposure of the ASGI routes on the Streamlit
+# server.
 
 
 # ==========================================
